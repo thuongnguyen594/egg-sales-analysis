@@ -1,0 +1,299 @@
+---
+title: "Eggs Sales Analysis Project"
+author: "Phuong Le & Elena Nguyen"
+date: "2025-02-09"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message=FALSE, warning=FALSE, error=FALSE)
+```
+
+## Introduction 
+#### 1. Business Problem: 
+
+The problem we are trying to solve is defining key factors that affect the sales of different egg products so that we can provide recommendations to boost sales accordingly.
+
+#### 2. How you addressed:
+
+We will look at the sales data for 2017, breaking it down from January to December to see if any seasonality need to be recognized. After that, we will dissect the data based on different demographic factors to identify the most common characteristics of those who specifically enjoy a certain type of egg product. The demographics here will include age, household size and whether they have kids or not. After that, we will conduct a scatter plot to examine whether display location affects the revenue. 
+
+#### 3. How helpful the analysis is: 
+
+The analysis is highly helpful as it provides actionable insights on demography, pricing strategies, and marketing opportunities to optimize sales and profitability of Eggs.
+
+## Packages Required
+
+The **completejourney** dataset is a dataset characterizing household level transactions over one year from a group of 2,469 households who are frequent shoppers at a grocery store.
+
+Below is the list of all the packages we used in this project. 
+```{r}
+# Data Manipulation
+library(dplyr)  
+library(stringr)  
+library(tidyverse)  
+
+# Date & Time Handling
+library(lubridate)  
+
+# Data Visualization
+library(ggplot2)  
+library(ggridges)  
+
+# Datasets
+library(completejourney)  
+
+```
+
+## Data Preparation 
+**Overview**: The Complete Journey Dataset is a rich dataset provided by 84.51°, capturing grocery store shopping transactions over a one-year period from January 2017 - December 2017. It includes data from 2,469 households who are frequent shoppers at a retailer, providing a comprehensive view of their purchasing behavior. 
+
+In our project, we focus on analyzing the **"EGGS"** product category to understand sales trends, customer preferences, and marketing effectiveness. To achieve this, we use key tables from the Complete Journey data package:
+
+- transactions – Contains purchase records, including product UPC, quantity, price, and transaction date.
+- products – Provides product metadata such as brand, description, and category.
+- demographics – Includes household characteristics like age, income, and family size.
+- promotions -  Contains product placement in mailers and in stores corresponding to advertising campaigns
+
+```{r}
+# get the completejourney - transactions dataset
+transactions <- get_transactions()
+transactions
+```
+
+```{r}
+# get the completejourney - promotions dataset
+promotions <- get_promotions()
+promotions
+```
+
+```{r}
+products
+```
+
+```{r}
+demographics
+```
+
+## Data Analysis 
+_Note: All contexts below follow this order: Data Extraction -> Visualization -> Insights_
+
+#### 1. Monthly Quantity/ Sales Value Trend of Different Types of Eggs
+
+**Data Extraction**: To analyze the general trends of egg sales in terms of revenue and quantity throughout the year of 2017, we joined the ‘products’ table with the ‘transactions’ table to draw both product category, product type, quantity and sales value to one-table setting. We also created a new column of ‘Month’ to help group data more efficiently. 
+
+
+```{r}
+# Filter jam products
+egg_filtered <- products %>%
+  filter(product_category == "EGGS")
+
+# Join with transactions and extract month
+egg_transactions <- transactions %>%
+  inner_join(egg_filtered, by = "product_id") %>%
+  mutate(month = as.Date(floor_date(transaction_timestamp, "month")))
+
+# Aggregate jam quantity by month and product type
+egg_quantity <- egg_transactions %>%
+  group_by(month, product_type) %>%
+  summarise(total_egg_quantity = sum(quantity, na.rm = TRUE), .groups = "drop")
+
+# Display result
+egg_quantity
+
+```
+
+```{r}
+# Create the line chart for quantity sold trends
+ggplot(egg_quantity, aes(x = month, y = total_egg_quantity, color = product_type, group = product_type)) +
+  geom_line(linewidth = 1) +  
+  geom_point(size = 2) +  
+  labs(title = "Monthly Trend of Quantity Sold for Different Eggs Types",
+       x = "Month",
+       y = "Total Quantity Sold",
+       color = "Egg Types") +
+  theme_minimal() + 
+  scale_x_date(date_labels = "%b %Y", date_breaks = "1 month") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  
+```
+
+**Insights:** Looking at the graph indicating the quantity sold, we can see that Eggs - Large has the highest quantity sold of 700 eggs in January and the data kept steadily increasing till the end of 2017 to nearly 900 eggs. Eggs - Medium and Eggs - X-large are likely substituted for each other since their trends went in the exact opposite direction, peaking at just under 1000 in April and May, respectively. Besides, Eggs - Jumbo and Eggs Substitute had the lowest quantity sold of 125 and remained throughout the year. 
+
+```{r}
+egg_sales <- egg_transactions %>%
+  group_by(month, product_type) %>%
+  summarise(total_egg_sales = sum(sales_value, na.rm = TRUE), .groups = "drop")
+egg_sales
+```
+
+```{r}
+# Create the line chart for quantity sold trends
+ggplot(egg_sales, aes(x = month, y = total_egg_sales, color = product_type, group = product_type)) +
+  geom_line(linewidth = 1) +  
+  geom_point(size = 2) +  
+  labs(title = "Monthly Trend of Sales for Different Egg Types",
+       x = "Month",
+       y = "Total Sales Value ($)",
+       color = "Egg Types") +
+  theme_minimal() +  
+  scale_x_date(date_labels = "%b %Y", date_breaks = "1 month") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+```
+
+**Insights:** In terms of revenue, the magnitude of data decreased significantly. Most product type trends in sales were consistent with the quantity sold. While Eggs - Medium and Eggs - X-Large still had inverse trends, the sales of Eggs - Medium was significantly lower compared to Eggs - X large - even in the period they have similar quantities sold. Specifically, in May, the quantity sold of X-Large dipped at $375 and yielded $400 while Medium Eggs, although peaked in quantity sold to 900, gained only $375 - lower than the X-Large. This suggests that medium-sized eggs may sell at significantly lower prices or have several discounts supporting their sales. Regardless of promotional approaches, we can see that consumers got a price incentive to buy eggs. 
+
+
+#### 2. Compare private label vs. national brand sales performance
+
+**Data Extraction**: The dataset egg_transactions is derived from the egg_filtered dataset by merging it with the transactions dataset based on the product_id field. It includes an additional brand_type column, categorizing brands as either "Private Brand" or "National Brand" based on the original brand column.
+
+```{r}
+# Classify brands as either Private Label or National Brand
+egg_transactions <- egg_filtered %>%
+  inner_join(transactions, by = "product_id") %>%
+  mutate(brand_type = ifelse(brand == "Private", "Private Brand", "National Brand"))
+
+# Summarize total sales by product_type and brand type
+brand_comparison <- egg_transactions %>%
+  group_by(product_type, brand_type) %>%
+  summarise(total_sales = sum(sales_value), .groups = "drop") %>%
+  arrange(product_type, desc(total_sales))
+
+# Display the results
+brand_comparison
+```
+
+
+```{r}
+ggplot(brand_comparison, aes(x = product_type, y = total_sales, fill = brand_type)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Private Label vs. National Brand Sales by Product Type",
+       x = "Product Type",
+       y = "Total Sales ($)",
+       fill = "Brand Type") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+**Insights**: Across all egg product types, private brand sales significantly outperform national brand sales. This suggests that consumers prefer store-brand eggs over national brands, possibly due to lower prices or perceived value. The highest sales volume is seen in large eggs, particularly for private brands. Sales of extra-large eggs and medium eggs show a noticeable preference for private labels, with national brands capturing only a small portion of the market. While private brands still lead, national brands seem to perform better in the egg substitute category compared to other egg types. This may suggest that national brands have stronger positioning in health-conscious or specialty egg alternatives. Sales of jumbo eggs is only shown in Private Brand. In addition, the sales of Medium eggs at National Brand is too small to be visualized with total sales of $3.43. 
+
+#### 3. Sales Performance of Different Types of Eggs
+
+**Data Extraction**: The dataset egg_data combines filtered egg product data with transaction records and household demographics using product_id and household_id. It includes transaction timestamps, demographic details, and a new column indicating whether a household has kids. Additionally, a month column is created to extract the transaction month.
+
+```{r}
+egg_data <- egg_filtered %>%
+  inner_join(transactions, by = 'product_id') %>%
+  inner_join(demographics, by = 'household_id') %>%
+  mutate(
+    month = month(transaction_timestamp),
+    kids = ifelse(kids_count > 0, "Have Kid(s)", "No Kids")
+)
+egg_data
+```
+
+##### Sales Performance of Eggs Across Age Groups
+
+```{r}
+ggplot(egg_data, aes(x = product_type, y = sales_value, fill = product_type)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~age) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 9)) +
+  labs(x = "Product Type", y = "Total Sales Value ($)", title = "Sales Performance of Eggs Across Age Groups") +
+  scale_fill_brewer(palette = "Set2") + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+**Insights**: Overall, 25-34, 35-44 and 45-54 are the three major groups that consumed the most eggs. Regardless of age group, the largest egg types that drove the most sales are Large eggs and then X-large eggs. The group of 55-64 and over 65 seemed to have no preferences between large and extra large eggs.
+
+
+##### Sales Performance of Eggs Across Household Size
+
+```{r}
+ggplot(egg_data, aes(x = product_type, y = sales_value, fill = product_type)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~ household_size) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 9)) +
+  labs(x = "Product Type", y = "Total Sales Value ($)", title = "Sales Performance of Egg Across Household Size") +
+  scale_fill_brewer(palette = "Set2") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+**Insights**: Our hypothesis is that the bigger the household size, the more eggs they buy. However, the results came inversely. Single and double households bought the most eggs, more than double the three larger sizes of household. 
+
+##### Sales Performance of Eggs Across Household Type (Kids vs. No Kids)
+```{r}
+ggplot(egg_data, aes(x = product_type, y = sales_value,fill = product_type)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~ kids) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 9)) +
+  labs(x = "Product Type", y = "Total Sales Value ($)", title = "Sales Performance of Jams Products Across Household Type (Kids vs. No Kids)") +
+  scale_fill_brewer(palette = "Set2")
+```
+
+**Insights**: We may want to see if household types - whether a family has kids or not - will affect how many eggs they want to buy.
+
+Surprisingly, even though eggs seem to be easy to cook and widely eaten, kids seem not to like eggs that much. Households with no kids are dominant in the sales performance of eggs, so kids are not a key determinant in the buying decision.
+
+However, kids seem to be a key decision factor for the family to choose an egg substitute or not. Families with kids tend not to choose egg substitutes compared to households without kids. 
+
+
+#### 4. Sales Value by Week and Display Location
+
+**Data Extraction**: The dataset display_egg contains information on promoted products that were successfully matched with transaction records and filtered egg products. It includes data from the promotions table (product promotions by store and week), the transactions table (sales data for those products), and the egg_filtered table (a subset of egg-related products).
+
+```{r}
+display_egg <- promotions %>% 
+inner_join(transactions, by = c('product_id', 'store_id', 'week')) %>%
+inner_join(egg_filtered, by = "product_id")
+```
+
+```{r}
+ggplot(display_egg, aes(x = week, y = sales_value, color = display_location)) +
+  geom_point(position = "dodge", size = 1, alpha = 0.7) +  
+  scale_y_continuous(labels = scales::dollar_format()) +   
+  labs(title = "Sales Value by Week and Display Location",  
+       x = "Week",                                        
+       y = "Sales Value ($)") +
+  guides(color = guide_legend(title = "Display Location")) +
+  theme_minimal() 
+```
+
+**Insights:** Most sales values remain below $2.50, with occasional spikes reaching above $5.00 and even close to $10.00. This suggests that higher sales values are rare but do occur across different display locations. A few significant outliers (above $7.50) indicate special circumstances where "Display location 7 and 2" led to unusually high sales. Investigating these peaks can help retailers optimize product placement strategies.
+
+
+## Summary 
+
+#### 1. Summarize the problem statement addressed: 
+In the beginning of this analysis, we would like to know what factors affect the sales of different product types of egg, so that we can conduct promotional strategies to boost more sales. 
+
+#### 2. How we answered the business problem:
+
+To do that, we created a new table by merging ‘products’, ‘transactions’, ‘promotions’, and ‘demographics’ to get cross-table data into 1 setting with the inner_join() function. We also used mutate() to create new columns that support our analysis - to show month, demographic information and brand types. For data visualization, we use mostly line charts to illustrate trends, bar charts and various charts customized to identify the key factors that affect the total sales. 
+
+
+#### 3. Summarize the interesting insights that your analysis provided:
+We started by dividing the data into different product types, which are different egg sizes, to see distinctive trend of each. We conducted both visualizations in terms of quantity and revenue to see if the data was consistent or if it had an underlying effect. 
+
+Looking deeper into different product types, large eggs drove the most sales, followed by extra large eggs and then medium-sized. Some promotional incentives might be responsible for the greater quantity sold of medium eggs, although it yields little sales. Regarding demographic factors, ages 45-54 bought the most eggs, closely followed by 55-64 and 25-44. Surprisingly, young people do not like to buy eggs that much. Neither household sizes nor number of children seem to be the key determinant of purchasing eggs. We also saw a distinctive sales gap between private brand’s revenue and national brands, in addition to some unavailable supply from national brands as well. 
+
+Regrading the scatter plot, although most sales values are below $2.50 across all display locations, we still see some outliers where “Display location 7 and 2” led to unusually high sales. 
+
+#### 4. My Recommendation:
+
+- Sales trends indicate fluctuations in demand throughout the year. Plan promotions around peak periods, such as holidays, when egg consumption typically rises.
+- We should supply more large eggs and extra large eggs because people bought them the most. Since medium eggs generate lower revenue despite high sales volume, we should consider reducing discounts or adjusting pricing to improve profitability.
+- Private-label eggs outperform national brands, indicating strong consumer trust. Increasing promotions and shelf space for private-brand eggs is recommended. Additionally, we suggest using targeted marketing campaigns to emphasize the cost-effectiveness and quality of private-label eggs compared to national brands.
+- More research need to be investigated why Display Locations 7 and 2 resulted in unusually high sales and replicate these strategies in other locations. We also recommend to test different in-store placements, end-cap promotions, or bundling strategies to drive higher-priced product sales.
+- Since single and double households buy the most eggs, create marketing campaigns tailored to their needs, such as small-batch packaging or convenience-focused recipes.
+- For households with kids, we suggest promoting whole eggs instead of egg substitutes, as they are less likely to purchase substitutes.
+
+
+
+#### 5. Limitations:
+There are some limitations with this analysis, so we recommend other groups should look further into promotional coupon, discount and marketing campaigns to see if they are also factors that drive sales. The data is limited in 2017, so it is challenging to justify whether this trend is still correct in the previous or the following year, considering macroeconomic factors. To define the purchase key drivers more effectively, future research may focus more on psychological factors with sentiment analysis, besides demographic data to get a more holistic view of this business question. 
